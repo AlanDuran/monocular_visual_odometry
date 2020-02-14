@@ -75,17 +75,17 @@ vector<Vec3f> rotationMatrixToEulerAngles(Mat &R)
 		float x = 0; //gimbal lock, value of x doesn't matter
 		float y = PI / 2;
 		float z = x + atan2(R.at<double>(0, 1), R.at<double>(0, 2));
-		return result.push_back(Vec3f(x, y, z));
+		result.push_back(Vec3f(x, y, z));
 	}
 	else if (closeEnough(R.at<double>(2, 0), 1.0f))
 	{
 		float x = 0;
 		float y = -PI / 2;
 		float z = -x + atan2(-R.at<double>(0, 1), -R.at<double>(0, 2));
-		return result.push_back(Vec3f(x, y, z));
+		result.push_back(Vec3f(x, y, z));
 	}
 	else
-	{ //two solutions exist
+	{   //two solutions exist
 		float y1 = -asin(R.at<double>(2, 0));
 		float y2 = PI - y1;
 
@@ -95,19 +95,36 @@ vector<Vec3f> rotationMatrixToEulerAngles(Mat &R)
 		float z1 = atan2(R.at<double>(1, 0) / cos(y1), R.at<double>(0, 0) / cos(y1));
 		float z2 = atan2(R.at<double>(1, 0) / cos(y2), R.at<double>(0, 0) / cos(y2));
 
-		//choose one solution to return
-		//for example the "shortest" rotation
 		if ((std::abs(x1) + std::abs(y1) + std::abs(z1)) <= (std::abs(x2) + std::abs(y2) + std::abs(z2)))
 		{
-			return Vec3f(x1, y1, z1);
+			result.push_back(Vec3f(x1, y1, z1));
+			result.push_back(Vec3f(x2, y2, z2));
 		}
 		else
 		{
-			return Vec3f(x2, y2, z2);
+			result.push_back(Vec3f(x2, y2, z2));
+			result.push_back(Vec3f(x1, y1, z1));
 		}
 	}
+
+	return result;
 }
 
+int select_rotation(vector<Vec3f> &angles, double &prev_angle, int angle_index)
+{
+	int selection = 0;
+	if(prev_angle == 1000)
+		prev_angle = angles.at(selection).val[angle_index]; //save y rotation
+	else if(abs(prev_angle + angles.at(0).val[angle_index]) > abs(prev_angle))
+		prev_angle = angles.at(selection).val[angle_index]; //save y rotation
+	else
+	{
+		selection = 1;
+		prev_angle = angles.at(selection).val[angle_index]; //save y rotation
+	}
+
+	return selection;
+}
 
 
 

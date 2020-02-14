@@ -100,7 +100,7 @@ int main(int argc, char **argv)
 	int index = 0;
 	int m_frames = 0;
 	Mat R_f = Mat::eye(3, 3, CV_64F);
-	Vec3f sum_angle;
+	double y_1 = 1000, acc_1 = 1000;
 
 	while(true)
 	{
@@ -160,29 +160,29 @@ int main(int argc, char **argv)
 			Mat E = findEssentialMat(points[index], points[new_index], camera_matrix, RANSAC, 0.999, 0.1, noArray());
 			recoverPose(E, points[index], points[new_index], camera_matrix, R, T, mask);
 
-			//Testing angle conversion
-			Vec3f angle, acc_angle;
-			angle = rotationMatrixToEulerAngles(R);
-			angle *= 180.0/PI;
+			//Angle conversion and selection based on sign change
+			vector<Vec3f> angles, acc_angles;
+			Vec3f my_angle, my_acc;
+
+			angles = rotationMatrixToEulerAngles(R);
+			int sel_1 = select_rotation(angles, y_1, 1);
+			my_angle = angles.at(sel_1);
+			my_angle  *= 180.0/PI;
 
 			R_f = R*R_f;
-			acc_angle = rotationMatrixToEulerAngles(R_f);
-			acc_angle *= 180.0/PI;
-			sum_angle += angle;
-			Mat mtxR, mtxQ;
-			Vec3d rq_R = RQDecomp3x3(R, mtxR, mtxQ);
-			Vec3d rq_Rf = RQDecomp3x3(R_f, mtxR, mtxQ);
+			acc_angles = rotationMatrixToEulerAngles(R_f);
+			int sel_2 = select_rotation(acc_angles, acc_1, 1);
+			my_acc = acc_angles.at(sel_2);
+			my_acc *= 180.0/PI;
 
-			printf("\nEstimated current R:\t\t\tAccumulated estimation of R:\n%lf %lf %lf\t\t%lf %lf %lf\n%lf %lf %lf\t\t%lf %lf %lf\n%lf %lf %lf\t\t%lf %lf %lf\n",
-				R.at<double>(0,0),R.at<double>(0,1),R.at<double>(0,2), R_f.at<double>(0,0),R_f.at<double>(0,1),R_f.at<double>(0,2),
-				R.at<double>(1,0), R.at<double>(1,1), R.at<double>(1,2), R_f.at<double>(1,0), R_f.at<double>(1,1), R_f.at<double>(1,2),
-				R.at<double>(2,0), R.at<double>(2,1), R.at<double>(2,2), R_f.at<double>(2,0), R_f.at<double>(2,1), R_f.at<double>(2,2));
-			printf("\nAngle:\n%lf %lf %lf\t\t%lf %lf %lf\n", angle.val[0], angle.val[1], angle.val[2],
-					acc_angle.val[0], acc_angle.val[1], acc_angle.val[2]);
-			printf("Accumulated angle: %lf %lf %lf\n", sum_angle.val[0], sum_angle.val[1], sum_angle.val[2]);
-
-			printf("\nAlternatitve angle:\n%lf %lf %lf\t\t%lf %lf %lf\n", rq_R.val[0], rq_R.val[1], rq_R.val[2],
-					rq_Rf.val[0], rq_Rf.val[1], rq_Rf.val[2]);
+			printf("\nEstimated current R:\t\t\tAccumulated estimation of R:\n");
+			print_rot_matrix(R, R_f);
+			printf("\nAngle:\n");
+			print_vector(my_angle, my_acc);
+			printf("\nAlternatitve angle:\n");
+			angles.at((~sel_1)&0x1) *= 180.0/PI;
+			acc_angles.at((~sel_2)&0x1) *= 180.0/PI;
+			print_vector(angles.at((~sel_1)&0x1), acc_angles.at((~sel_2)&0x1));
 		}
 		else
 		{
@@ -191,7 +191,7 @@ int main(int argc, char **argv)
 		}
 
 		index = new_index;
-		waitKey(1);
+		waitKey(0);
 	}
 
 	waitKey(0);
