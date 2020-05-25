@@ -58,74 +58,29 @@ bool isRotationMatrix(Mat &R)
     return  norm(I, shouldBeIdentity) < 8e-6;
 }
 
-bool closeEnough(const float& a, const float& b) {
-	float epsilon = std::numeric_limits<float>::epsilon();
-    return (epsilon > std::abs(a - b));
-}
-
-vector<Vec3f> rotationMatrixToEulerAngles(Mat &R)
+Vec3f rotationMatrixToEulerAngles(Mat &R)
 {
-	vector<Vec3f> result;
-	assert(isRotationMatrix(R));
-	//Rz(φ)Ry(θ)Rx(ψ)
+    assert(isRotationMatrix(R));
 
-	//check for gimbal lock
-	if (closeEnough(R.at<double>(2, 0), -1.0f))
-	{
-		float x = 0; //gimbal lock, value of x doesn't matter
-		float y = PI / 2;
-		float z = x + atan2(R.at<double>(0, 1), R.at<double>(0, 2));
-		result.push_back(Vec3f(x, y, z));
-	}
-	else if (closeEnough(R.at<double>(2, 0), 1.0f))
-	{
-		float x = 0;
-		float y = -PI / 2;
-		float z = -x + atan2(-R.at<double>(0, 1), -R.at<double>(0, 2));
-		result.push_back(Vec3f(x, y, z));
-	}
-	else
-	{   //two solutions exist
-		float y1 = -asin(R.at<double>(2, 0));
-		float y2 = PI - y1;
+    float sy = sqrt(R.at<double>(0, 0) * R.at<double>(0, 0) + R.at<double>(1, 0) * R.at<double>(1, 0));
 
-		float x1 = atan2(R.at<double>(2, 1) / cos(y1), R.at<double>(2, 2) / cos(y1));
-		float x2 = atan2(R.at<double>(2, 1) / cos(y2), R.at<double>(2, 2) / cos(y2));
+    bool singular = sy < 1e-6; // If
 
-		float z1 = atan2(R.at<double>(1, 0) / cos(y1), R.at<double>(0, 0) / cos(y1));
-		float z2 = atan2(R.at<double>(1, 0) / cos(y2), R.at<double>(0, 0) / cos(y2));
+    float x, y, z;
 
-		if ((std::abs(x1) + std::abs(y1) + std::abs(z1)) <= (std::abs(x2) + std::abs(y2) + std::abs(z2)))
-		{
-			result.push_back(Vec3f(x1, y1, z1));
-			result.push_back(Vec3f(x2, y2, z2));
-		}
-		else
-		{
-			result.push_back(Vec3f(x2, y2, z2));
-			result.push_back(Vec3f(x1, y1, z1));
-		}
-	}
+    y = atan2(-R.at<double>(2, 0), sy);
 
-	return result;
+    if (!singular){
+        x = atan2(R.at<double>(2, 1), R.at<double>(2, 2));
+        z = atan2(R.at<double>(1, 0), R.at<double>(0, 0));
+    }
+    else {
+        x = atan2(-R.at<double>(1, 2), R.at<double>(1, 1));
+        z = 0;
+    }
+
+    return Vec3f(x, y, z); //check_tangent(R, sy, x, y, z);
 }
-
-int select_rotation(vector<Vec3f> &angles, double &prev_angle, int angle_index)
-{
-	int selection = 0;
-	if(prev_angle == 1000)
-		prev_angle = angles.at(selection).val[angle_index]; //save y rotation
-	else if(abs(prev_angle + angles.at(0).val[angle_index]) > abs(prev_angle))
-		prev_angle = angles.at(selection).val[angle_index]; //save y rotation
-	else
-	{
-		selection = 1;
-		prev_angle = angles.at(selection).val[angle_index]; //save y rotation
-	}
-
-	return selection;
-}
-
 
 
 #endif /* ROT2EULER_H_ */

@@ -6,6 +6,7 @@
  */
 
 #include <iostream>
+#include <fstream>
 
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
@@ -17,19 +18,31 @@
 #include "point_mgmt.h"
 #include "rot2euler.h"
 
-#define USE_VIDEO 0
-#define INITIAL_FRAME 0
-#define N_FEATURES 50
+// I/O parameters
+#define USE_VIDEO 			1
+#define INITIAL_FRAME 		0
+#define STEP				0
+#define SHOW_PLOTS			1
+#define DRAW_SCALE			0.75
+#define LINE_SIZE			1
+#define CIRCLE_SIZE			5
+
+
+// ALG parameters
+#define MAX_DISTANCE 		2
+#define MAX_DIR_ANGLE 		22.5
+#define N_FEATURES 			250
 
 using namespace cv;
 using namespace std;
 
-string img_lst_path = "../data/photo/config/r180.xml";
-string video_path = "../data/rot/static.mp4";
-string camera_matrix_path = "../data/cal/ip7_photos_out.xml";
+string file_to_write = "../data/jetson/reports/roll.txt";
+string img_lst_path = "../data/jetson/photo/roll2.xml";
+string video_path = "../data/jetson/room/pitch.avi";
+string camera_matrix_path = "../data/cal/jetson6_out.xml"; //jetson6_out, ip7_out, ip7_photos_out
 int framecount = 0;
 vector<string> image_list;
-VideoCapture capture;
+VideoCapture capture(video_path);
 
 static Mat get_next_img();
 static bool readStringList( const string& filename, vector<string>& l );
@@ -39,8 +52,8 @@ int main(int argc, char **argv)
 {
 	/********************** open video *************************************************/
 	#if USE_VIDEO
-		string filename = argc > 1 ? argv[1] : video_path;
-		capture.VideoCapture(filename);
+		//string filename = argc > 1 ? argv[1] : video_path;
+
 		if (!capture.isOpened()) //error in opening the video input
 		{
 			cerr << "Unable to open file!" << endl;
@@ -81,7 +94,7 @@ int main(int argc, char **argv)
 	vector<Point2f> points[2];
 
 	// Take first frame
-	Mat features_img, tracking_img;
+	Mat features_img, tracking_img, epilines_img, epilines_filtered_img;
 	cap_frame = get_next_img();
 
 	if(cap_frame.empty())
@@ -90,21 +103,21 @@ int main(int argc, char **argv)
 	  return -1;
 	}
 
-	cap_frame.copyTo(features_img);
-	cvtColor(cap_frame, frames[0], COLOR_BGR2GRAY);
+	undistort_n_grayscale(cap_frame, frames[0], features_img, camera_matrix, dist_coeffs);
 	// Create a mask image for drawing purposes
-	Mat drawing_mask, feat_mask;
+	Mat feat_mask;
 	Size frame_size(cap_frame.cols, cap_frame.rows);
+	feat_mask = create_mask(frame_size, camera_matrix, dist_coeffs);
 
 	//other initializations
 	int index = 0;
-	int m_frames = 0;
+	int m_frames = 0, e_frames = 0;
+	double max = 0, min = 0;
 	Mat R_f = Mat::eye(3, 3, CV_64F);
-	double y_1 = 1000, acc_1 = 1000;
 
 	while(true)
 	{
-    	/********************************** define features to track ***********************************/
+    	/********************************** define features to track *******************************************/
 
 		/* Parameters:
 		- image	Input 8-bit or floating-point 32-bit, single-channel image.
@@ -116,44 +129,83 @@ int main(int argc, char **argv)
 		- blockSize	Size of an average block for computing a derivative covariation matrix over each pixel neighborhood. See cornerEigenValsAndVecs .
 		- useHarrisDetector	Parameter indicating whether to use a Harris detector (see cornerHarris) or cornerMinEigenVal.
 		- k	Free parameter of the Harris detector. */
-    	goodFeaturesToTrack(frames[index], points[index], N_FEATURES, 0.3, 7, feat_mask, 15, false, 0.04);
-    	draw_features(features_img, points[index], points[index].size(), colors, 15);
+		vector<Point2f> new_points;
+    	goodFeaturesToTrack(frames[index], new_points, N_FEATURES, 0.3, 7, feat_mask, 15, false, 0.04);
+    	update_feature_positions(&points[(index + 1) % 2], &new_points, N_FEATURES, 15);
+    	points[index] = points[(index + 1) % 2];
+
+#if SHOW_PLOTS
+     	draw_features(features_img, points[index], points[index].size(), colors, CIRCLE_SIZE, DRAW_SCALE);
+#endif
 
 		if(points[index].size() < 8)
 		{
 			cap_frame = get_next_img();
 			if (cap_frame.empty())
 				break;
-			frames[index].copyTo(features_img);
-			cvtColor(cap_frame, frames[index], COLOR_BGR2GRAY);
 
+			undistort_n_grayscale(cap_frame, frames[index], features_img, camera_matrix, dist_coeffs);
 			m_frames++;
-			printf("\nNot enough good features to track, missed frame %d\n", framecount);
+			printf("\nNot enough good features to track, missed frame %d\n", m_frames);
 			continue;
 		}
-
+		//capture.set(CAP_PROP_POS_FRAMES , capture.get(CAP_PROP_POS_FRAMES) + STEP);
 		cap_frame = get_next_img();
 		if(cap_frame.empty())
 			break;
 
-		/************** calculate optical flow with lucas-kanade *************************************/
-		int new_index = (index + 1) % 2;
-		cap_frame.copyTo(features_img);
-		cap_frame.copyTo(tracking_img);
-		cvtColor(cap_frame, frames[new_index], COLOR_BGR2GRAY);
+		/************** calculate optical flow with lucas-kanade ****************************************************/
 
+		int new_index = (index + 1) % 2;
+		undistort_n_grayscale(cap_frame, frames[new_index], features_img, camera_matrix, dist_coeffs);
+		features_img.copyTo(tracking_img);
+		features_img.copyTo(epilines_img);
+		features_img.copyTo(epilines_filtered_img);
 		vector<uchar> status;
 		vector<float> err;
 		TermCriteria criteria = TermCriteria((TermCriteria::COUNT) + (TermCriteria::EPS), 30, 0.01);
 		//OPTFLOW_LK_GET_MIN_EIGENVALS
 		calcOpticalFlowPyrLK(frames[index], frames[new_index], points[index], points[new_index],
-				status, err, Size(10,10), 7, criteria, 0, 1e-2);
+				status, err, Size(10,10), 3, criteria, 0, 1e-3);
 
 		//getting rid of points for which the KLT tracking failed or those who have gone outside the frame
-		check_klt(points[index], points[new_index], points[new_index].size(), status);
-		draw_tracking(tracking_img, points[index], points[new_index], points[index].size(), colors, 15, 5);
+		check_klt(&points[index], &points[new_index], status, MAX_DIR_ANGLE);
 
-		printf("\n%d\n", (int)points[new_index].size());
+#if SHOW_PLOTS
+    	draw_tracking(tracking_img, points[index], points[new_index], points[index].size(), colors,
+    			CIRCLE_SIZE, LINE_SIZE, DRAW_SCALE);
+#endif
+
+    	/************** filter some points with epipolar lines *******************************************************/
+
+    	if(points[index].size() < 8)
+		{
+			index = new_index;
+			m_frames++;
+			printf("\nNot enough good tracked features with LK, missed frame %d\n", m_frames);
+			continue;
+		}
+
+    	// Example. Estimation of fundamental matrix using the RANSAC algorithm
+		vector<Vec3f> epilines2;
+		Mat F = findFundamentalMat(points[index], points[new_index], FM_8POINT);
+		computeCorrespondEpilines(points[new_index], 2, F, epilines2);
+		printf("\nbef ep %d, ", (int)points[new_index].size());
+
+#if SHOW_PLOTS
+		draw_epilines(epilines_img, &points[new_index], &epilines2, points[new_index].size(),
+				colors, CIRCLE_SIZE, LINE_SIZE, DRAW_SCALE);
+#endif
+
+		check_epilines(&points[index], &points[new_index], &epilines2, MAX_DISTANCE);
+
+#if SHOW_PLOTS
+		draw_epilines(epilines_filtered_img, &points[new_index], &epilines2, points[new_index].size(),
+				colors, CIRCLE_SIZE, LINE_SIZE, DRAW_SCALE, "Epilines filtered with distance");
+#endif
+    	/******************** recover pose ***************************************************************************/
+
+		printf("after %d\n", (int)points[new_index].size());
 		if(points[new_index].size() > 5)
 		{
 			Mat R, T, mask;
@@ -161,40 +213,62 @@ int main(int argc, char **argv)
 			recoverPose(E, points[index], points[new_index], camera_matrix, R, T, mask);
 
 			//Angle conversion and selection based on sign change
-			vector<Vec3f> angles, acc_angles;
-			Vec3f my_angle, my_acc;
+			Vec3f angles, acc_angles;
 
-			angles = rotationMatrixToEulerAngles(R);
-			int sel_1 = select_rotation(angles, y_1, 1);
-			my_angle = angles.at(sel_1);
-			my_angle  *= 180.0/PI;
+			angles = rotationMatrixToEulerAngles(R) * (180/PI);
 
-			R_f = R*R_f;
-			acc_angles = rotationMatrixToEulerAngles(R_f);
-			int sel_2 = select_rotation(acc_angles, acc_1, 1);
-			my_acc = acc_angles.at(sel_2);
-			my_acc *= 180.0/PI;
+			if (fabs(angles[0]) < 10 && fabs(angles[1]) < 10 && fabs(angles[2]) < 10)
+				R_f = R*R_f;
+			else{
+				e_frames++;
+				printf("\nFiltered frames: %d\n", e_frames);
+			}
+
+			acc_angles = rotationMatrixToEulerAngles(R_f) * (180/PI);
+
+			if(acc_angles.val[0] < min && framecount < 375)
+				min = acc_angles.val[0];
+			if(acc_angles.val[0] > max && framecount < 375)
+				max = acc_angles.val[0];
 
 			printf("\nEstimated current R:\t\t\tAccumulated estimation of R:\n");
 			print_rot_matrix(R, R_f);
-			printf("\nAngle:\n");
-			print_vector(my_angle, my_acc);
-			printf("\nAlternatitve angle:\n");
-			angles.at((~sel_1)&0x1) *= 180.0/PI;
-			acc_angles.at((~sel_2)&0x1) *= 180.0/PI;
-			print_vector(angles.at((~sel_1)&0x1), acc_angles.at((~sel_2)&0x1));
+			printf("\nAngle: (x = pitch, y = yaw, z = roll)\n");
+			print_vector(angles, acc_angles);
 		}
 		else
 		{
 			m_frames++;
-			printf("\nNot enough tracked features to recover essential matrix, missed frame %d\n", framecount);
+			printf("\nNot enough features to recover essential matrix, missed frame %d\n", m_frames);
 		}
 
 		index = new_index;
+
+#if SHOW_PLOTS
 		waitKey(0);
+#endif
 	}
 
-	waitKey(0);
+	double perc = 100 * (e_frames + m_frames) / framecount;
+	printf("m_frames = %d, e_frames = %d, pmissed = %f, n_frames = %d\n", m_frames, e_frames, perc, framecount);
+	printf("min = %f, max = %f\n", min, max);
+
+	fstream log;
+	log.open(file_to_write, fstream::app);
+	log << "\n----------------------------------\nMAX_DISTANCE\t\t" << MAX_DISTANCE << "\n";
+	log << "MAX_DIR_ANGLE\t\t" << MAX_DIR_ANGLE << "\n";
+	log << "N_FEATURES\t\t" << N_FEATURES << "\n";
+	log << "STEP\t\t\t" << STEP << "\n\n";
+	Vec3f angle = rotationMatrixToEulerAngles(R_f) * (180/PI);
+	log << angle.val[0] << " " << angle.val[1] << " " << angle.val[2] << "\n";
+	log << "m_frames = " << m_frames << "\t\te_frames = " << e_frames;
+	log << "\ntotal_missed = "<<  e_frames + m_frames << ", " << perc << "%\tn_frames = " << framecount << "\n";
+	log << "min = " << min << "\tmax = " << max << "\n";
+	log.close();
+
+#if SHOW_PLOTS
+		waitKey(0);
+#endif
 }
 
 static Mat get_next_img()
@@ -211,17 +285,17 @@ static Mat get_next_img()
 }
 
 static bool readStringList( const string& filename, vector<string>& l )
-    {
-        l.clear();
-        FileStorage fs(filename, FileStorage::READ);
-        if( !fs.isOpened() )
-            return false;
-        FileNode n = fs.getFirstTopLevelNode();
-        if( n.type() != FileNode::SEQ )
-            return false;
-        FileNodeIterator it = n.begin(), it_end = n.end();
-        for( ; it != it_end; ++it )
-            l.push_back((string)*it);
-        return true;
-    }
+{
+	l.clear();
+	FileStorage fs(filename, FileStorage::READ);
+	if( !fs.isOpened() )
+		return false;
+	FileNode n = fs.getFirstTopLevelNode();
+	if( n.type() != FileNode::SEQ )
+		return false;
+	FileNodeIterator it = n.begin(), it_end = n.end();
+	for( ; it != it_end; ++it )
+		l.push_back((string)*it);
+	return true;
+}
 

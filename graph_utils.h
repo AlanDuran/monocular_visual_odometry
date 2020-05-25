@@ -24,25 +24,41 @@ void show_n_resize(Mat src, double scale, const String &title)
 }
 
 void draw_features(Mat src, vector<Point2f> &points, int points_size, vector<Scalar> &colors,
-		int circle_size = 5)
+		int circle_size = 5, double scale = 0.50, string fig_name = "Detected features in I(t)")
 {
 	for(int i = 0; i < points_size; i++){
 		circle(src, points[i], circle_size, colors[i], -1);
 	}
 
-	show_n_resize(src, 0.20, "Detected features in I(t)");
+	show_n_resize(src, scale, fig_name);
 }
 
-void draw_tracking(Mat src, vector<Point2f> &points, vector<Point2f> &tracked, int points_size,
-		vector<Scalar> &colors, int circle_size = 5, int thickness = 1)
+void draw_tracking(Mat src, vector<Point2f> &points, vector<Point2f> &tracked, int points_size, vector<Scalar> &colors,
+		int circle_size = 5, int thickness = 1, double scale = 0.50, string fig_name = "Tracked features  in I(t)")
 {
 	for(int i = 0; i < points_size; i++){
 		//circle(src, points[i], circle_size, colors[i], -1);
 		line(src, tracked[i], points[i], colors[i], thickness, LINE_4);
 		circle(src, tracked[i], circle_size, colors[i], -1);
+		circle(src, points[i], circle_size, colors[i], -1);
 	}
 
-	show_n_resize(src, 0.20, "Tracked features in I(t+1)");
+	show_n_resize(src, scale, fig_name);
+}
+
+void draw_epilines(Mat src, vector<Point2f> *pts, vector<Vec3f> *epilines, int points_size, vector<Scalar> &colors,
+		int circle_size = 5, int thickness = 1, double scale = 0.50, string fig_name = "Epilines (points1 drawn on second image)")
+{
+	vector<Point2f> &points = *pts; //Create a ¿
+	vector<Vec3f> &epilines2 = *epilines; //Create a reference
+
+	for(int i = 0; i < points_size; i++){
+		line(src, Point(0,-epilines2[i][2]/epilines2[i][1]),
+				Point(src.cols,-(epilines2[i][2]+epilines2[i][0]*src.cols)/epilines2[i][1]), colors[i], thickness, LINE_4);
+		circle(src, points[i], circle_size, colors[i], -1);
+	}
+
+	show_n_resize(src, scale, fig_name);
 }
 
 void print_rot_matrix(Mat R)
