@@ -9,6 +9,7 @@
 #define SRC_POINT_MGMT_H_
 
 #include <iostream>
+#include <numeric>
 #include <opencv2/imgproc.hpp>
 
 using namespace cv;
@@ -25,6 +26,7 @@ void check_klt(vector<Point2f> *pts, vector<Point2f> *new_pts, vector<uchar> &st
 
 	int removed = 0;
 	vector<double> dirs;
+	vector<double> dirsf;
 	uint points_size = new_points.size();
 	max_angle /= 180;
 
@@ -48,15 +50,17 @@ void check_klt(vector<Point2f> *pts, vector<Point2f> *new_pts, vector<uchar> &st
 			double dy = pt.y - pt2.y;
 			double dist = dx*dx + dy*dy;
 
-			if (dist > 50e-3)
+			if (dist > 100e-3) {
+				dirsf.push_back(diamond_angle(dx, dy));
 				dirs.push_back(diamond_angle(dx, dy));
+			}
 			else
-				dirs.push_back(0);
+				dirs.push_back(std::numeric_limits<float>::infinity());
 		}
 	}
 
 	points_size = new_points.size();
-	double average = accumulate( dirs.begin(), dirs.end(), 0.0) / points_size;
+	double average = std::accumulate( dirsf.begin(), dirsf.end(), 0.0) / dirsf.size();
 	removed = 0;
 
 	for(uint i = 0; i < points_size; i++)
