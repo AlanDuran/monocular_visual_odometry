@@ -87,4 +87,14 @@ void print_vector(Vec3f &vec, Vec3f &vec2)
 	printf("%lf %lf %lf\t\t%lf %lf %lf\n", vec.val[0], vec.val[1], vec.val[2],
 			vec2.val[0], vec2.val[1], vec2.val[2]);
 }
+
+void log_result(const string &file, Vec3f angles, Vec3f acc_angles)
+{
+	fstream log;
+	log.open(file, fstream::app);
+	log << acc_angles[0] << ", " << acc_angles[1] << ", " << acc_angles[2];
+	log << ", " << angles[0] << ", " << angles[1] << ", " << angles[2] << "\n";
+	log.close();
+}
+
 #endif /* SRC_GRAPH_UTILS_H_ */

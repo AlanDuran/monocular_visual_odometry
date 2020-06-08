@@ -343,4 +343,4 @@ healthchecksdb
 *.vcxproj
 *.vcxproj.*
 *.props
-.sln
+*.sln

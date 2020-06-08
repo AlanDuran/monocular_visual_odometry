@@ -28,7 +28,7 @@ void check_klt(vector<Point2f> *pts, vector<Point2f> *new_pts, vector<uchar> &st
 	vector<double> dirs;
 	vector<double> dirsf;
 	uint points_size = new_points.size();
-	max_angle /= 180;
+	max_angle /= 180; //conversion to half "diamond angle" (1 == 90°)
 
 	for(uint i = 0; i < points_size; i++)
 	{
@@ -66,11 +66,10 @@ void check_klt(vector<Point2f> *pts, vector<Point2f> *new_pts, vector<uchar> &st
 	for(uint i = 0; i < points_size; i++)
 	{
 		int j = i - removed;
-		if(dirs[j] > average + max_angle || dirs[j] < average - max_angle)
+		if(dirs[i] > average + max_angle || dirs[i] < average - max_angle)
 		{
 			points.erase(points.begin() + j);
 			new_points.erase(new_points.begin() + j);
-			dirs.erase(dirs.begin() + j);
 			removed++;
 		}
 	}
@@ -99,63 +98,50 @@ void check_klt(vector<Point2f> *pts, vector<Point2f> *new_pts,
 	}
 }
 
-void update_feature_positions(vector<Point2f> *pts, vector<Point2f> *new_pts, uint max_features,
-		uint max_distance = 10)
+void update_feature_positions(vector<Point2f> *last_pts, vector<Point2f> *new_pts, 
+	uint max_features, uint max_distance = 10)
 {
-	vector<Point2f> &points = *pts; //Create a reference
+	vector<Point2f> &last_points = *last_pts; //Create a reference
 	vector<Point2f> &new_points = *new_pts; //Create a reference
+	vector<Point2f> points;
 
-	uint curr_size = points.size();
+	uint curr_size = last_points.size();
 	uint curr_removed = 0;
 
-	if(curr_size > 0)
+	if (curr_size > 0)
 	{
-		for(uint i = 0; i < curr_size; i++)
+		for (uint i = 0; i < curr_size; i++)
 		{
 			uint curr_index = i - curr_removed;
 			uint flag = 1;
 			uint j;
 
-			for(j = 0; j < new_points.size(); j++)
-			{
-				double high_x = points[curr_index].x + max_distance;
-				double low_x = points[curr_index].x - max_distance;
-				double high_y = points[curr_index].y + max_distance;
-				double low_y = points[curr_index].y - max_distance;
+			for (j = 0; j < new_points.size(); j++) {
+				double high_x = last_points[curr_index].x + max_distance;
+				double low_x = last_points[curr_index].x - max_distance;
+				double high_y = last_points[curr_index].y + max_distance;
+				double low_y = last_points[curr_index].y - max_distance;
 				double x = new_points[j].x;
 				double y = new_points[j].y;
 
-				if(((x <= high_x) && (x >= low_x) &&
-						(y <= high_y) && (y >= low_y)))
-				{
+				if (((x <= high_x) && (x >= low_x) && (y <= high_y) && (y >= low_y))) {
 					flag = 0;
 					break;
 				}
 			}
 
-			if(flag)
-			{
-				points.erase(points.begin() + curr_index);
+			if (flag) {
+				last_points.erase(last_points.begin() + curr_index);
 				curr_removed++;
 			}
-
-			else
+			else {
+				points.push_back(new_points[j]);
 				new_points.erase(new_points.begin() + j);
-		}
-
-		if (points.size() < max_features)
-		{
-			for(uint i = 0; i < new_points.size(); i++)
-			{
-				points.push_back(new_points[i]);
-				if (points.size() == max_features)
-					break;
 			}
 		}
-	}
 
-	else
-		points = new_points;
+		new_points.insert(new_points.begin(), points.begin(), points.end());
+	}
 }
 
 // from https://stackoverflow.com/questions/1427422/cheap-algorithm-to-find-measure-of-angle-between-vectors
